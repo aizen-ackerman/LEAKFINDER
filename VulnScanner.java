@@ -553,8 +553,20 @@ public class VulnScanner {
             displayResults(results);
             return results;
 
+        } catch (java.nio.file.NoSuchFileException e) {
+            System.out.println("Error: File not found: " + filePath);
+            System.out.println("Error details: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        } catch (java.io.FileNotFoundException e) {
+            System.out.println("Error: File not found: " + filePath);
+            System.out.println("Error details: " + e.getMessage());
+            e.printStackTrace();
+            return null;
         } catch (Exception e) {
-            System.out.println("Error reading file: " + e.getMessage());
+            System.out.println("Error reading file: " + filePath);
+            System.out.println("Error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            e.printStackTrace();
             return null;
         }
     }
