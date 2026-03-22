@@ -5,12 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LEAKFINDER - Vulnerability Scanner</title>
     <link rel="stylesheet" href="style.css">
+    <script src="universe.js"></script>
 </head>
 <body>
     <div class="stars"></div>
-<<<<<<< HEAD
-    <div class="container">
-=======
     
     <div id="loading-page" style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; gap: 20px;">
         <div class="spinner" style="width: 50px; height: 50px; border: 4px solid rgba(124, 179, 66, 0.3); border-top: 4px solid #7cb342; border-radius: 50%; animation: spin 1s linear infinite;"></div>
@@ -22,10 +20,9 @@
             <div id="user-button"></div>
         </div>
 
-        <div id="watermark" class="watermark">Aizen_Ackerman</div>
+        <div id="watermark" class="watermark">Made by Aizen_Ackerman</div>
 
         <div class="container">
->>>>>>> 5fd0171 (Updated project with latest local files)
         <div class="header">
             <h1 class="title">LEAKFINDER</h1>
             <p class="subtitle">Web Vulnerability Scanner</p>
@@ -63,8 +60,6 @@
             </div>
         </div>
 
-<<<<<<< HEAD
-=======
     <div id="history-section" class="results-section hidden">
         <div class="summary-card">
             <h2 class="checks-title" style="margin-bottom: 15px;">Scan History</h2>
@@ -78,7 +73,6 @@
         </div>
     </div>
 
->>>>>>> 5fd0171 (Updated project with latest local files)
         <div id="results-section" class="results-section hidden">
             <div class="summary-card">
                 <h2 class="summary-title">Scan Summary</h2>
@@ -127,32 +121,64 @@
         </div>
 
         <div id="error-message" class="error-message hidden"></div>
-<<<<<<< HEAD
-    </div>
-
-    <script src="script.js"></script>
-</body>
-</html>
-=======
         </div>
     </div>
+    <!-- Load Clerk from reliable CDN -->
+    <script
+        async
+        crossorigin="anonymous"
+        data-clerk-publishable-key="pk_test_aGVhbHRoeS1saW9uZXNzLTMyLmNsZXJrLmFjY291bnRzLmRldiQ"
+        src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+    ></script>
 
 
 
     <script>
-        // ============================================
-        // AUTHENTICATION GATE - instant check, no Clerk dependency
-        // ============================================
-        function checkAuthBeforeLoading() {
-            // Check for local JWT token (set by login page)
-            var devToken = localStorage.getItem('dev_token') || localStorage.getItem('token');
-            if (devToken) {
-                console.log('[Auth Gate] Token found, showing app');
-                showApp();
-            } else {
-                console.log('[Auth Gate] No token, redirecting to login');
-                window.location.href = '/login.html';
+        const CLERK_KEY = 'pk_test_aGVhbHRoeS1saW9uZXNzLTMyLmNsZXJrLmFjY291bnRzLmRldiQ';
+
+        async function waitForClerk(ms) {
+            const deadline = Date.now() + ms;
+            while (!window.Clerk && Date.now() < deadline) {
+                await new Promise(r => setTimeout(r, 100));
             }
+            return !!window.Clerk;
+        }
+
+        async function bootApp() {
+            const clerkReady = await waitForClerk(5000);
+
+            if (clerkReady) {
+                try {
+                    await window.Clerk.load({ publishableKey: CLERK_KEY });
+
+                    if (window.Clerk.user) {
+                        // Clerk user signed in ✅
+                        showApp();
+                        // Mount UserButton in top-right
+                        const ubDiv = document.getElementById('user-button');
+                        if (ubDiv) window.Clerk.mountUserButton(ubDiv, { afterSignOutUrl: '/login.html' });
+                        return;
+                    }
+                } catch(e) {
+                    console.warn('[Auth] Clerk error:', e.message);
+                }
+            }
+
+            // Fallback: check for saved dev token (local login)
+            const devToken = localStorage.getItem('dev_token') || localStorage.getItem('token');
+            if (devToken && devToken !== '') {
+                showApp();
+                // Show logged-in user display
+                const ubDiv = document.getElementById('user-button');
+                const user = localStorage.getItem('dev_user') || 'Admin';
+                if (ubDiv) {
+                    ubDiv.innerHTML = '<span style="color:#aed581;font-size:13px;padding:6px 12px;background:rgba(124,179,66,0.15);border:1px solid rgba(124,179,66,0.3);border-radius:20px;">&#128100; ' + user + '</span>';
+                }
+                return;
+            }
+
+            // Not authenticated → go to login
+            window.location.href = '/login.html';
         }
 
         function showApp() {
@@ -160,12 +186,26 @@
             document.getElementById('app-container').style.display = 'block';
         }
 
-        // Start auth check immediately
-        checkAuthBeforeLoading();
+        // Logout button handler
+        document.addEventListener('DOMContentLoaded', function() {
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', async function() {
+                    if (window.Clerk && window.Clerk.session) {
+                        await window.Clerk.signOut();
+                    }
+                    localStorage.removeItem('dev_token');
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('dev_user');
+                    window.location.href = '/login.html';
+                });
+            }
+        });
+
+        bootApp();
     </script>
 
     <script src="script.js"></script>
 </body>
 </html>
 
->>>>>>> 5fd0171 (Updated project with latest local files)

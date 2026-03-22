@@ -1,7 +1,20 @@
 const API_BASE_URL = 'http://localhost:8080';
 
-<<<<<<< HEAD
-=======
+// Immediately ensure the user is authenticated. If not, send them to the login page.
+(async function enforceAuthRedirect() {
+    try {
+        const token = await getAuthToken();
+        if (!token) {
+            console.warn('[Script] No auth token found — redirecting to /login.html');
+            // Give a tiny delay so any pending network logs can flush, then redirect
+            setTimeout(() => { window.location.href = '/login.html'; }, 50);
+        }
+    } catch (e) {
+        console.error('[Script] Error while checking auth token:', e);
+        setTimeout(() => { window.location.href = '/login.html'; }, 50);
+    }
+})();
+
 // ============================================
 // CLERK AUTHENTICATION INTEGRATION
 // ============================================
@@ -18,7 +31,14 @@ async function ensureClerkLoaded() {
 
 async function getAuthToken() {
     try {
-        // First ensure Clerk is loaded
+        // 1) If developer saved a mock token (fallback for offline/dev), use it
+        const devToken = localStorage.getItem('dev_token');
+        if (devToken) {
+            console.warn('[Script] Using dev token from localStorage (development fallback)');
+            return devToken;
+        }
+
+        // 2) Try Clerk client if available
         const clerkReady = await ensureClerkLoaded();
         if (!clerkReady) {
             console.warn('[Script] Clerk did not load after timeout');
@@ -33,7 +53,7 @@ async function getAuthToken() {
                 return token;
             }
         }
-        
+
         console.warn('[Script] Clerk session not available or no token');
         return null;
     } catch (error) {
@@ -61,7 +81,6 @@ async function getAuthHeaders() {
 
 // ============================================
 
->>>>>>> 5fd0171 (Updated project with latest local files)
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -141,13 +160,6 @@ async function scanUrl(url) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
-<<<<<<< HEAD
-        const response = await fetch(`${API_BASE_URL}/api/scan/url`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-=======
         const headers = await getAuthHeaders();
 
         console.log('[Script] Sending URL scan request to /api/scan/url');
@@ -155,18 +167,12 @@ async function scanUrl(url) {
         const response = await fetch(`${API_BASE_URL}/api/scan/url`, {
             method: 'POST',
             headers: headers,
->>>>>>> 5fd0171 (Updated project with latest local files)
             body: JSON.stringify({ url }),
             signal: controller.signal
         });
 
         clearTimeout(timeoutId);
 
-<<<<<<< HEAD
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Scan failed');
-=======
         console.log('[Script] Response status:', response.status, response.statusText);
 
         if (!response.ok) {
@@ -188,7 +194,6 @@ async function scanUrl(url) {
             }
             
             throw new Error(errorMsg);
->>>>>>> 5fd0171 (Updated project with latest local files)
         }
 
         const data = await response.json();
@@ -217,13 +222,6 @@ async function scanUploadedFile(file) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minute timeout
 
-<<<<<<< HEAD
-        const response = await fetch(`${API_BASE_URL}/api/upload/scan`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-=======
         const headers = await getAuthHeaders();
 
         console.log('[Script] Sending file scan request to /api/upload/scan with headers:', Object.keys(headers));
@@ -231,7 +229,6 @@ async function scanUploadedFile(file) {
         const response = await fetch(`${API_BASE_URL}/api/upload/scan`, {
             method: 'POST',
             headers: headers,
->>>>>>> 5fd0171 (Updated project with latest local files)
             body: JSON.stringify({
                 fileName: file.name,
                 fileContent: fileContent,
@@ -242,16 +239,6 @@ async function scanUploadedFile(file) {
 
         clearTimeout(timeoutId);
 
-<<<<<<< HEAD
-        if (!response.ok) {
-            let errorMsg = 'Scan failed';
-            try {
-                const error = await response.json();
-                errorMsg = error.error || errorMsg;
-            } catch (e) {
-                errorMsg = `HTTP ${response.status}: ${response.statusText}`;
-            }
-=======
         console.log('[Script] Response status:', response.status, response.statusText);
 
         if (!response.ok) {
@@ -272,7 +259,6 @@ async function scanUploadedFile(file) {
                 console.error('[Script] 403 Forbidden - token validation failed');
             }
             
->>>>>>> 5fd0171 (Updated project with latest local files)
             throw new Error(errorMsg);
         }
 
@@ -312,13 +298,6 @@ async function scanFile(filePath) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minute timeout
 
-<<<<<<< HEAD
-        const response = await fetch(`${API_BASE_URL}/api/scan/file`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-=======
         const headers = await getAuthHeaders();
 
         console.log('[Script] Sending file path scan request to /api/scan/file');
@@ -326,18 +305,12 @@ async function scanFile(filePath) {
         const response = await fetch(`${API_BASE_URL}/api/scan/file`, {
             method: 'POST',
             headers: headers,
->>>>>>> 5fd0171 (Updated project with latest local files)
             body: JSON.stringify({ filePath }),
             signal: controller.signal
         });
 
         clearTimeout(timeoutId);
 
-<<<<<<< HEAD
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Scan failed');
-=======
         console.log('[Script] Response status:', response.status, response.statusText);
 
         if (!response.ok) {
@@ -359,7 +332,6 @@ async function scanFile(filePath) {
             }
             
             throw new Error(errorMsg);
->>>>>>> 5fd0171 (Updated project with latest local files)
         }
 
         const data = await response.json();

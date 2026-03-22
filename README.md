@@ -25,6 +25,7 @@ LEAKFINDER is a Web Vulnerability Scanner that identifies security vulnerabiliti
 
 ### Prerequisites
 - Java JDK 8 or higher
+<<<<<<< HEAD
 
 ### Running the Application
 
@@ -44,6 +45,23 @@ LEAKFINDER is a Web Vulnerability Scanner that identifies security vulnerabiliti
 4. **Start scanning:**
    - Enter a URL (e.g., `example.com`) and click "Scan" to scan a website
    - Or switch to "Scan File" tab and enter a file path to scan a local file
+=======
+- Maven
+
+### Running the Application
+
+1. **Start the Spring Boot application:**
+   ```bash
+   mvn spring-boot:run
+   ```
+
+2. **Open your browser:**
+   Navigate to `http://localhost:8080`
+
+3. **Start scanning:**
+   - Enter a URL (e.g., `example.com`) and click "Scan" to scan a website
+   - Use the "Scan File" tab in the UI (it uploads the file to the backend)
+>>>>>>> 5fd0171 (Updated project with latest local files)
 
 ## Usage
 
@@ -85,6 +103,20 @@ LEAKFINDER/
 - `POST /api/scan/file` - Scan a local file
   - Body: `{"filePath": "/path/to/file"}`
 
+<<<<<<< HEAD
+=======
+- `POST /api/upload/scan` - Upload a file (base64) and scan it
+  - Body: `{"fileName":"name.ext","fileContent":"...","isBase64":true}`
+
+## Authentication (Enterprise level)
+JWT + user storage are included (Spring Security). A default dev user is created on startup:
+- `admin / admin123`
+
+- `POST /api/auth/login`
+  - Body: `{"username":"admin","password":"admin123"}`
+  - Response: `{ "token": "...", "tokenType": "Bearer" }`
+
+>>>>>>> 5fd0171 (Updated project with latest local files)
 ## Notes
 
 - The scanner performs basic security checks and is intended for educational purposes
