@@ -77,6 +77,37 @@ class ScanResults {
     public String getTimestamp() { return timestamp; }
     public List<CheckResult> getChecks() { return checks; }
     public Map<String, Integer> getSummary() { return summary; }
+    public String getSeverity() {
+        if (summary.getOrDefault("high", 0) > 0) {
+            return "HIGH";
+        }
+        if (summary.getOrDefault("medium", 0) > 0) {
+            return "MEDIUM";
+        }
+        return "LOW";
+    }
+    public String getAction() {
+        String severity = getSeverity();
+        if ("HIGH".equals(severity)) {
+            return "BLOCK";
+        }
+        if ("MEDIUM".equals(severity)) {
+            return "WARN";
+        }
+        return "ALLOW";
+    }
+    public List<String> getIssues() {
+        List<String> flattened = new ArrayList<>();
+        for (CheckResult check : checks) {
+            if (check.isPassed()) {
+                continue;
+            }
+            for (String issue : check.getIssues()) {
+                flattened.add(check.getName() + ": " + issue);
+            }
+        }
+        return flattened;
+    }
 }
 
 public class VulnScanner {

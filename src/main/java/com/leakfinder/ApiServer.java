@@ -6,7 +6,7 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class ApiServer {
@@ -14,8 +14,34 @@ public class ApiServer {
     private HttpServer server;
     private static final int PORT = 8080;
 
+    // Scan History
+    static class ScanHistoryItem {
+        int id;
+        String type;
+        String target;
+        String timestamp;
+        ScanResults results;
+
+        public ScanHistoryItem(int id, String type, String target, String timestamp, ScanResults results) {
+            this.id = id;
+            this.type = type;
+            this.target = target;
+            this.timestamp = timestamp;
+            this.results = results;
+        }
+    }
+
+    private final List<ScanHistoryItem> scanHistory = new ArrayList<>();
+    private int nextScanId = 1;
+
+    // XposedOrNot Cache
+    private String cachedBreaches = null;
+    private long cacheTimestamp = 0;
+    private static final long CACHE_TTL_MS = 3600000; // 1 hour
+
     public ApiServer() {
         this.scanner = new VulnScanner();
+        preseedHistory();
     }
 
     public void start() throws IOException {
@@ -24,6 +50,8 @@ public class ApiServer {
         server.createContext("/api/scan/url", this::handleScanUrl);
         server.createContext("/api/scan/file", this::handleScanFile);
         server.createContext("/api/upload/scan", this::handleFileUpload);
+        server.createContext("/api/scans/history", this::handleScanHistory);
+        server.createContext("/api/breaches", this::handleBreaches);
         server.createContext("/", this::handleStatic);
         
         server.setExecutor(null);
@@ -67,6 +95,10 @@ public class ApiServer {
                 if (results == null) {
                     sendResponse(exchange, 500, "{\"error\":\"Scan failed - no results returned\"}");
                     return;
+                }
+
+                synchronized (scanHistory) {
+                    scanHistory.add(new ScanHistoryItem(nextScanId++, "URL", url, results.getTimestamp(), results));
                 }
 
                 String jsonResponse = convertToJson(results);
@@ -129,6 +161,10 @@ public class ApiServer {
                 if (results == null) {
                     sendResponse(exchange, 500, "{\"error\":\"Scan failed - no results returned\"}");
                     return;
+                }
+
+                synchronized (scanHistory) {
+                    scanHistory.add(new ScanHistoryItem(nextScanId++, "FILE", filePath, results.getTimestamp(), results));
                 }
 
                 String jsonResponse = convertToJson(results);
@@ -265,6 +301,10 @@ public class ApiServer {
                     return;
                 }
 
+                synchronized (scanHistory) {
+                    scanHistory.add(new ScanHistoryItem(nextScanId++, "FILE", fileName != null ? fileName : "uploaded_file", results.getTimestamp(), results));
+                }
+
                 String jsonResponse = convertToJson(results);
                 sendResponse(exchange, 200, jsonResponse);
             } catch (java.nio.file.NoSuchFileException e) {
@@ -307,16 +347,34 @@ public class ApiServer {
 
     private void handleStatic(HttpExchange exchange) throws IOException {
         String path = exchange.getRequestURI().getPath();
-        
-        if (path.equals("/") || path.equals("/index.html")) {
-            serveFile(exchange, "index.html", "text/html");
-        } else if (path.equals("/style.css")) {
-            serveFile(exchange, "style.css", "text/css");
-        } else if (path.equals("/script.js")) {
-            serveFile(exchange, "script.js", "application/javascript");
-        } else {
-            sendResponse(exchange, 404, "{\"error\":\"Not found\"}");
+        if (path.equals("/")) {
+            path = "/index.html";
         }
+        
+        if (path.contains("..")) {
+            sendResponse(exchange, 400, "{\"error\":\"Bad request\"}");
+            return;
+        }
+
+        String filename = path.startsWith("/") ? path.substring(1) : path;
+        File file = new File(filename);
+        
+        if (!file.exists() || file.isDirectory()) {
+            file = new File("src/main/resources/static/" + filename);
+            if (!file.exists() || file.isDirectory()) {
+                sendResponse(exchange, 404, "{\"error\":\"Not found\"}");
+                return;
+            }
+        }
+
+        String contentType = "application/octet-stream";
+        if (filename.endsWith(".html")) contentType = "text/html";
+        else if (filename.endsWith(".css")) contentType = "text/css";
+        else if (filename.endsWith(".js")) contentType = "application/javascript";
+        else if (filename.endsWith(".svg")) contentType = "image/svg+xml";
+        else if (filename.endsWith(".png")) contentType = "image/png";
+
+        serveFile(exchange, file.getPath(), contentType);
     }
 
     private void serveFile(HttpExchange exchange, String filename, String contentType) throws IOException {
@@ -435,6 +493,240 @@ public class ApiServer {
         OutputStream os = exchange.getResponseBody();
         os.write(responseBytes);
         os.close();
+    }
+
+    // Preseed history with project codebase scans
+    private void preseedHistory() {
+        try {
+            System.out.println("Pre-seeding scan history with project files...");
+            File pomFile = new File("pom.xml");
+            if (pomFile.exists()) {
+                ScanResults r1 = scanner.scanFile("pom.xml");
+                if (r1 != null) {
+                    scanHistory.add(new ScanHistoryItem(nextScanId++, "FILE", "pom.xml", r1.getTimestamp(), r1));
+                }
+            }
+            File runFile = new File("run.sh");
+            if (runFile.exists()) {
+                ScanResults r2 = scanner.scanFile("run.sh");
+                if (r2 != null) {
+                    scanHistory.add(new ScanHistoryItem(nextScanId++, "FILE", "run.sh", r2.getTimestamp(), r2));
+                }
+            }
+            File apiFile = new File("src/main/java/com/leakfinder/ApiServer.java");
+            if (apiFile.exists()) {
+                ScanResults r3 = scanner.scanFile("src/main/java/com/leakfinder/ApiServer.java");
+                if (r3 != null) {
+                    scanHistory.add(new ScanHistoryItem(nextScanId++, "FILE", "src/main/java/com/leakfinder/ApiServer.java", r3.getTimestamp(), r3));
+                }
+            }
+            System.out.println("Scan history pre-seeded successfully. Scans loaded: " + scanHistory.size());
+        } catch (Exception e) {
+            System.err.println("Failed to preseed history: " + e.getMessage());
+        }
+    }
+
+    private void handleScanHistory(HttpExchange exchange) throws IOException {
+        if (exchange.getRequestMethod().equals("OPTIONS")) {
+            handleCORS(exchange);
+            return;
+        }
+        
+        String method = exchange.getRequestMethod();
+        String path = exchange.getRequestURI().getPath();
+        
+        if (method.equals("GET")) {
+            if (path.startsWith("/api/scans/history/")) {
+                String idStr = path.substring("/api/scans/history/".length());
+                try {
+                    int id = Integer.parseInt(idStr);
+                    ScanHistoryItem found = null;
+                    synchronized (scanHistory) {
+                        for (ScanHistoryItem item : scanHistory) {
+                            if (item.id == id) {
+                                found = item;
+                                break;
+                            }
+                        }
+                    }
+                    if (found != null) {
+                        sendResponse(exchange, 200, convertHistoryItemToJson(found));
+                    } else {
+                        sendResponse(exchange, 404, "{\"error\":\"Scan log not found\"}");
+                    }
+                } catch (NumberFormatException e) {
+                    sendResponse(exchange, 400, "{\"error\":\"Invalid scan log ID\"}");
+                }
+            } else if (path.equals("/api/scans/history") || path.equals("/api/scans/history/")) {
+                String json;
+                synchronized (scanHistory) {
+                    json = convertHistoryListToJson(scanHistory);
+                }
+                sendResponse(exchange, 200, json);
+            } else {
+                sendResponse(exchange, 404, "{\"error\":\"Not found\"}");
+            }
+        } else {
+            sendResponse(exchange, 405, "{\"error\":\"Method not allowed\"}");
+        }
+    }
+
+    private void handleBreaches(HttpExchange exchange) throws IOException {
+        if (exchange.getRequestMethod().equals("OPTIONS")) {
+            handleCORS(exchange);
+            return;
+        }
+        
+        if (!exchange.getRequestMethod().equals("GET")) {
+            sendResponse(exchange, 405, "{\"error\":\"Method not allowed\"}");
+            return;
+        }
+        
+        long now = System.currentTimeMillis();
+        String responseBody = null;
+        
+        synchronized (this) {
+            if (cachedBreaches != null && (now - cacheTimestamp < CACHE_TTL_MS)) {
+                responseBody = cachedBreaches;
+            }
+        }
+        
+        if (responseBody == null) {
+            System.out.println("Fetching live breach directory from XposedOrNot...");
+            responseBody = fetchUrl("https://api.xposedornot.com/v1/breaches");
+            
+            if (responseBody != null && responseBody.contains("\"exposedBreaches\"")) {
+                synchronized (this) {
+                    cachedBreaches = responseBody;
+                    cacheTimestamp = now;
+                }
+            } else {
+                System.out.println("Failed to fetch live breaches, using static fallback.");
+                synchronized (this) {
+                    if (cachedBreaches != null) {
+                        responseBody = cachedBreaches;
+                    } else {
+                        responseBody = getFallbackBreachesJson();
+                    }
+                }
+            }
+        }
+        
+        sendResponse(exchange, 200, responseBody);
+    }
+
+    private String fetchUrl(String urlString) {
+        try {
+            URL url = new URL(urlString);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            
+            int status = conn.getResponseCode();
+            if (status != 200) {
+                return null;
+            }
+            
+            try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                StringBuilder content = new StringBuilder();
+                String line;
+                while ((line = in.readLine()) != null) {
+                    content.append(line);
+                }
+                return content.toString();
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to fetch from URL: " + urlString + " due to " + e.getMessage());
+            return null;
+        }
+    }
+
+    private String getFallbackBreachesJson() {
+        return "{"
+            + "\"status\":\"success\","
+            + "\"message\":null,"
+            + "\"exposedBreaches\":["
+            + "{\"breachID\":\"CanvaDatabase\",\"domain\":\"canva.com\",\"exposedRecords\":137000000,\"breachedDate\":\"2019-05-01T00:00:00+00:00\",\"exposedData\":[\"Email addresses\",\"Passwords\",\"Names\"]},"
+            + "{\"breachID\":\"LinkedInScrape\",\"domain\":\"linkedin.com\",\"exposedRecords\":700000000,\"breachedDate\":\"2021-06-01T00:00:00+00:00\",\"exposedData\":[\"Email addresses\",\"Phone numbers\",\"Job titles\"]},"
+            + "{\"breachID\":\"AdobeExposure\",\"domain\":\"adobe.com\",\"exposedRecords\":152000000,\"breachedDate\":\"2013-10-01T00:00:00+00:00\",\"exposedData\":[\"Email addresses\",\"Password hints\"]},"
+            + "{\"breachID\":\"DropboxLeak\",\"domain\":\"dropbox.com\",\"exposedRecords\":68000000,\"breachedDate\":\"2012-08-01T00:00:00+00:00\",\"exposedData\":[\"Email addresses\",\"Passwords\"]},"
+            + "{\"breachID\":\"LedgerDatabase\",\"domain\":\"ledger.com\",\"exposedRecords\":1000000,\"breachedDate\":\"2020-12-01T00:00:00+00:00\",\"exposedData\":[\"Email addresses\",\"Physical addresses\",\"Phone numbers\"]}"
+            + "]"
+            + "}";
+    }
+
+    private String convertHistoryListToJson(List<ScanHistoryItem> list) {
+        StringBuilder json = new StringBuilder();
+        json.append("[");
+        boolean first = true;
+        for (ScanHistoryItem item : list) {
+            if (!first) json.append(",");
+            first = false;
+            json.append(convertHistoryItemToJson(item));
+        }
+        json.append("]");
+        return json.toString();
+    }
+
+    private String convertHistoryItemToJson(ScanHistoryItem item) {
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        json.append("\"id\":").append(item.id).append(",");
+        json.append("\"target\":\"").append(escapeJson(item.target)).append("\",");
+        json.append("\"targetType\":\"").append(escapeJson(item.type)).append("\",");
+        json.append("\"severity\":\"").append(escapeJson(item.results.getSeverity())).append("\",");
+        json.append("\"timestamp\":\"").append(escapeJson(item.timestamp)).append("\",");
+        
+        Map<String, Integer> summaryMap = item.results.getSummary();
+        json.append("\"total\":").append(summaryMap.get("total")).append(",");
+        json.append("\"passed\":").append(summaryMap.get("passed")).append(",");
+        json.append("\"failed\":").append(summaryMap.get("failed")).append(",");
+        json.append("\"high\":").append(summaryMap.get("high")).append(",");
+        json.append("\"medium\":").append(summaryMap.get("medium")).append(",");
+        json.append("\"low\":").append(summaryMap.get("low")).append(",");
+        
+        json.append("\"summary\":{");
+        json.append("\"total\":").append(summaryMap.get("total")).append(",");
+        json.append("\"passed\":").append(summaryMap.get("passed")).append(",");
+        json.append("\"failed\":").append(summaryMap.get("failed")).append(",");
+        json.append("\"high\":").append(summaryMap.get("high")).append(",");
+        json.append("\"medium\":").append(summaryMap.get("medium")).append(",");
+        json.append("\"low\":").append(summaryMap.get("low"));
+        json.append("},");
+        
+        json.append("\"checks\":[");
+        boolean firstCheck = true;
+        for (CheckResult check : item.results.getChecks()) {
+            if (!firstCheck) json.append(",");
+            firstCheck = false;
+            json.append("{");
+            json.append("\"name\":\"").append(escapeJson(check.getName())).append("\",");
+            json.append("\"passed\":").append(check.isPassed()).append(",");
+            json.append("\"severity\":\"").append(escapeJson(check.getSeverity())).append("\",");
+            json.append("\"issues\":[");
+            boolean firstIssue = true;
+            for (String issue : check.getIssues()) {
+                if (!firstIssue) json.append(",");
+                firstIssue = false;
+                json.append("\"").append(escapeJson(issue)).append("\"");
+            }
+            json.append("]");
+            json.append("}");
+        }
+        json.append("],");
+        
+        json.append("\"issues\":[");
+        boolean firstIssue = true;
+        for (String issue : item.results.getIssues()) {
+            if (!firstIssue) json.append(",");
+            firstIssue = false;
+            json.append("\"").append(escapeJson(issue)).append("\"");
+        }
+        json.append("]");
+        
+        json.append("}");
+        return json.toString();
     }
 
     public static void main(String[] args) {
